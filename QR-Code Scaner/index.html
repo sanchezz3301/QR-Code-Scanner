@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Barcode Scanner with Database</title>
+  <style>
+  body {
+    font-family: 'Arial', sans-serif;
+    background-color: #111;
+    color: #fff;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+  }
+
+  .container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: #333;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+  }
+
+  video {
+    border: 2px solid #00f;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+
+  #barcode-result, #product-info, #total-price {
+    font-size: 18px;
+    margin-bottom: 16px;
+  }
+
+  button {
+    padding: 10px 20px;
+    font-size: 16px;
+    background-color: #00f;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 16px;
+  }
+
+  button:hover {
+    background-color: #0078e7;
+  }
+
+  .list-container {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 16px;
+    background-color: #222;
+    border-radius: 8px;
+    box-shadow: -5px 5px 10px rgba(0, 0, 0, 0.3);
+  }
+
+  ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+    font-size: 16px;
+  }
+
+  li {
+    margin-bottom: 8px;
+  }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr"></script>
+</head>
+<body>
+  <div class="container">
+    <video id="video" width="640" height="480" autoplay></video>
+    <div id="barcode-result"></div>
+    <div id="product-info"></div>
+    <button onclick="resetList()">Сбросить список</button>
+  </div>
+  <div class="list-container">
+    <ul id="barcode-list"></ul>
+    <div id="total-price"></div>
+  </div>
+  <audio id="beep" src="beep.mp3" preload="auto"></audio> <!-- Замените 'path/to/beep.mp3' на путь к вашему звуку -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const video = document.getElementById('video');
+      const barcodeResultDiv = document.getElementById('barcode-result');
+      const productInfoDiv = document.getElementById('product-info');
+      const barcodeList = document.getElementById('barcode-list');
+      const totalPriceDiv = document.getElementById('total-price');
+      const scannedBarcodes = [];
+      const beepSound = document.getElementById('beep');
+
+      // Создание примера базы данных в localStorage
+      const productsDatabase = {
+        '111111': { id: 1, name: 'Product 1', price: 10.00 },
+        '222222': { id: 2, name: 'Product 2', price: 15.00 },
+        '333333': { id: 3, name: 'Product 3', price: 20.00 }
+      };
+
+      // Функция для получения информации о продукте по штрих-коду
+      function getProductInfoByBarcode(barcode) {
+        return productsDatabase[barcode];
+      }
+
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then((stream) => {
+          video.srcObject = stream;
+        })
+        .catch((error) => {
+          console.error('Error accessing camera:', error);
+        });
+
+      video.addEventListener('loadeddata', function () {
+        setInterval(() => {
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const context = canvas.getContext('2d');
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, canvas.width, canvas.height);
+
+          if (code) {
+            const barcodeData = code.data;
+            displayBarcodeResult(barcodeData);
+            fetchProductInfoByBarcode(barcodeData);
+            saveBarcodeToList(barcodeData);
+            playBeepSound(); // Воспроизведение звука при обнаружении QR-кода
+          } else {
+            clearBarcodeResult();
+          }
+        }, 2500); // Run every second
+      });
+
+      function displayBarcodeResult(barcodeData) {
+        barcodeResultDiv.innerHTML = `Штрих-код: ${barcodeData}`;
+      }
+
+      function fetchProductInfoByBarcode(barcode) {
+        const product = getProductInfoByBarcode(barcode);
+        if (product) {
+          displayProductInfo(product);
+        } else {
+          clearProductInfo();
+        }
+      }
+
+      function displayProductInfo(product) {
+        productInfoDiv.innerHTML = `${product.name} - ${product.price.toFixed(2)} AZN`;
+      }
+
+      function saveBarcodeToList(barcodeData) {
+        scannedBarcodes.push(barcodeData);
+        updateBarcodeList();
+        calculateTotalPrice();
+      }
+
+      function updateBarcodeList() {
+        barcodeList.innerHTML = '';
+        scannedBarcodes.forEach((barcode) => {
+          const listItem = document.createElement('li');
+          listItem.textContent = barcode;
+          barcodeList.appendChild(listItem);
+        });
+      }
+
+      function calculateTotalPrice() {
+        const totalPrice = scannedBarcodes.reduce((sum, barcode) => {
+          const product = getProductInfoByBarcode(barcode);
+          return sum + (product ? product.price : 0);
+        }, 0);
+
+        totalPriceDiv.innerHTML = `Общая стоимость: $${totalPrice.toFixed(2)}`;
+      }
+
+      window.resetList = function () {
+        scannedBarcodes.length = 0;
+        updateBarcodeList();
+        clearProductInfo();
+        clearBarcodeResult();
+        clearTotalPrice();
+      };
+
+      function clearBarcodeResult() {
+        barcodeResultDiv.innerHTML = 'Штрих-код не обнаружен';
+      }
+
+      function clearProductInfo() {
+        productInfoDiv.innerHTML = '';
+      }
+
+      function clearTotalPrice() {
+        totalPriceDiv.innerHTML = '';
+      }
+
+      function playBeepSound() {
+        beepSound.play();
+      }
+    });
+  </script>
+</body>
+</html>
